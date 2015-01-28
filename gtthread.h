@@ -41,8 +41,13 @@ typedef struct gtthreadint_t {
   int alive;
 } gtthreadint_t;
 
+typedef struct MutexNode {
+  struct MutexNode *next;
+  struct gtthread_mutex_t *mutex;
+} MutexNode;
+
 typedef struct gtthread_mutex_t {
-  struct gtthreadint_t *cur_thread;
+  struct Node *cur_thread;
   struct Node *waiting_threads;
 } gtthread_mutex_t;
 

@@ -12,6 +12,9 @@ long last_allocated_thread_id;
 long interval;
 /* dummy context to return to */
 ucontext_t return_dummy_context;
+/* mutex linked list */
+MutexNode *mutex_queue;
+
 
 /************************ INTERNAL FUNCTIONS *********************************/
 void set_preempt_timer(long);
@@ -88,6 +91,7 @@ void set_preempt_timer(long tinterval) {
 
 /* linear search through the queue to find the thread with the given id */
 Node* search_thread(gtthread_t id) {
+  MutexNode *mutex_cur;
   Node* cur_waiting;
   Node *cur = queue;
 
@@ -116,6 +120,23 @@ Node* search_thread(gtthread_t id) {
     if(cur->thread->id == id) {
       return cur;
     }
+
+    cur = cur->next;
+  }
+
+  /* search in mutex blocked thread */
+  mutex_cur = mutex_queue;
+  while(mutex_cur) {
+    cur_waiting = mutex_cur->mutex->waiting_threads;
+    while(cur_waiting) {
+      if(cur_waiting->thread->id == id) {
+        return cur_waiting;
+      }
+
+      cur_waiting = cur_waiting->next;
+    }
+
+    mutex_cur = mutex_cur->next;
   }
 
   printf("SHOULD NOT REACH HERE @line %d in file %s\n", __LINE__, __FILE__);
@@ -175,6 +196,9 @@ void exit_thread(void) {
 void gtthread_init(long period) {
   last_allocated_thread_id = 0;
   interval = period;
+
+  /* mutex init */
+  mutex_queue = NULL;
 
   /* record the details of main thread */
   queue = malloc(sizeof(Node));
@@ -380,6 +404,7 @@ int gtthread_equal(gtthread_t t1, gtthread_t t2) {
  * implemented; all threads are canceled immediately */
 int gtthread_cancel(gtthread_t thread) {
   Node *cur, *prev, *cur_waiting, *prev_waiting;
+  MutexNode *mutex_cur;
 
   if(queue->thread->id == thread || thread == 0) {
     return -1;
@@ -391,12 +416,7 @@ int gtthread_cancel(gtthread_t thread) {
   /* disable ALARM signal */
   set_preempt_timer(0);
 
-  /* search for the thread.
-     Possible cases:
-   *  -first element of the linked list
-   *  -middle element of the linked list
-   *  -last element of the linked list
-   */
+  /* search for the thread */
   prev = NULL;
   cur = queue;
   while(cur) {
@@ -420,6 +440,23 @@ int gtthread_cancel(gtthread_t thread) {
 
     prev = cur;
     cur = cur->next;
+  }
+
+  /* search in mutex blocked thread */
+  mutex_cur = mutex_queue;
+  while(mutex_cur) {
+    prev = NULL;
+    cur = mutex_cur->mutex->waiting_threads;
+    while(cur) {
+      if(cur->thread->id == thread) {
+        goto DELETEDATA;
+      }
+
+      prev = cur;
+      cur = cur->next;
+    }
+
+    mutex_cur = mutex_cur->next;
   }
 
   /* If came here => the thread id doesn't exist */
@@ -467,6 +504,96 @@ gtthread_t gtthread_self(void) {
 
 
 /************************ GTthread MUTEX API *********************************/
-int  gtthread_mutex_init(gtthread_mutex_t *mutex);
-int  gtthread_mutex_lock(gtthread_mutex_t *mutex);
-int  gtthread_mutex_unlock(gtthread_mutex_t *mutex);
+int gtthread_mutex_init(gtthread_mutex_t *mutex) {
+  sigset_t mask;
+  MutexNode *mn = malloc(sizeof(MutexNode));
+
+  /* disable ALARM signal */
+  disable_alarm(&mask);
+
+  /* putting the mutex in mutex queue */
+  mn->next = mutex_queue;
+  mn->mutex = mutex;
+  mutex_queue = mn;
+
+  /* enable ALARM signal */
+  enable_alarm(&mask);
+
+  /* init mutex */
+  mn->mutex->cur_thread = NULL;
+  mn->mutex->waiting_threads = NULL;
+
+  return 0;
+}
+
+int gtthread_mutex_lock(gtthread_mutex_t *mutex) {
+  sigset_t mask;
+  Node *node;
+
+  /* disable ALARM signal */
+  disable_alarm(&mask);
+
+  if(mutex->cur_thread == NULL) {
+    mutex->cur_thread = queue;
+
+    /* enable ALARM signal */
+    enable_alarm(&mask);
+    return 0;
+  } else {
+    /* enable ALARM signal */
+    enable_alarm(&mask);
+
+    /* disable ALARM signal again */
+    set_preempt_timer(0);
+
+    /* adding current thread to the list of waiting
+       threads for this mutex */
+    node = queue->next;
+    queue->next = mutex->waiting_threads;
+    mutex->waiting_threads = queue;
+
+    /* removing the current thread from the list of
+       runnable threads, blocking this thread */
+    queue = node;
+    assert(queue);
+
+    /* enable ALARM signal */
+    set_preempt_timer(interval);
+
+    /* swapcontext to another thread */
+    swapcontext(&mutex->waiting_threads->thread->context,
+                &queue->thread->context);
+    return 0;
+  }
+}
+
+int gtthread_mutex_unlock(gtthread_mutex_t *mutex) {
+  sigset_t mask;
+  Node *node;
+
+  /* disable ALARM signal */
+  disable_alarm(&mask);
+
+  /* Invariant check */
+  assert(queue->thread->id == mutex->cur_thread->thread->id);
+
+  /* put first waiting thread in the list of runnable threads */
+  node = mutex->waiting_threads;
+  if(node) {
+    mutex->waiting_threads = node->next;
+    tail->next = node;
+    node->next = NULL;
+    tail = tail->next;
+
+    /* re-assign the mutex */
+    mutex->cur_thread = tail;
+  } else {
+    /* unlock the mutex */
+    mutex->cur_thread = NULL;
+  }
+
+  /* enable ALARM signal */
+  enable_alarm(&mask);
+
+  return 0;
+}
