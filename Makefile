@@ -26,7 +26,7 @@ $(LIBRARY): $(LIB_OBJ)
 	$(RANLIB) $(LIBRARY)
 
 $(TEST): $(LIBRARY) $(TEST).c
-	$(CC) -o $(TEST) $(TEST).c $(LIBRARY)
+	$(CC) $(CFLAGS) -o $(TEST) $(TEST).c $(LIBRARY)
 
 clean:
 	$(RM) $(LIBRARY) $(LIB_OBJ) $(TEST)

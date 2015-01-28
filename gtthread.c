@@ -10,10 +10,11 @@ Node *dead_queue;
 long last_allocated_thread_id;
 /* min time slice allocated to each thread */
 long interval;
-
+/* dummy context to return to */
+ucontext_t return_dummy_context;
 
 /************************ INTERNAL FUNCTIONS *********************************/
-void set_preempt_timer();
+void set_preempt_timer(long);
 
 /* disable SIGVTALRM signal */
 void disable_alarm(sigset_t* orig_mask) {
@@ -40,7 +41,7 @@ void timer_handler(int signum) {
     assert(tail == queue);
 
     /* start the timer again */
-    set_preempt_timer();
+    set_preempt_timer(interval);
     return;
   }
 
@@ -54,7 +55,7 @@ void timer_handler(int signum) {
   tail->next = NULL;
 
   /* start the timer again */
-  set_preempt_timer();
+  set_preempt_timer(interval);
 
   /* swap context */
   swapcontext(&tail->thread->context, &queue->thread->context);
@@ -62,7 +63,7 @@ void timer_handler(int signum) {
 }
 
 /* sets the preemption timer */
-void set_preempt_timer() {
+void set_preempt_timer(long tinterval) {
   struct sigaction sa;
   struct itimerval timer;
 
@@ -71,12 +72,12 @@ void set_preempt_timer() {
   sa.sa_handler = &timer_handler;
   sigaction(SIGVTALRM, &sa, NULL);
 
-  if(interval >= 1000000) {
-    timer.it_value.tv_sec = interval/1000000;
-    timer.it_value.tv_usec = interval%1000000;
+  if(tinterval >= 1000000) {
+    timer.it_value.tv_sec = tinterval/1000000;
+    timer.it_value.tv_usec = tinterval%1000000;
   } else {
     timer.it_value.tv_sec = 0;
-    timer.it_value.tv_usec = interval;
+    timer.it_value.tv_usec = tinterval;
   }
 
   timer.it_interval.tv_usec = 0;
@@ -90,6 +91,7 @@ Node* search_thread(gtthread_t id) {
   Node* cur_waiting;
   Node *cur = queue;
 
+  /* search in current runnable threads */
   while(cur) {
     if(cur->thread->id == id) {
       return cur;
@@ -120,6 +122,53 @@ Node* search_thread(gtthread_t id) {
   assert(0);
 }
 
+/* all threads when return, switch to this function call */
+void exit_thread(void) {
+  /* canceling current thread */
+  Node *cur, *cur_waiting;
+
+  /* invariant check */
+  assert(queue);
+
+  /* disable ALARM signal */
+  set_preempt_timer(0);
+
+  /* delete the data structure */
+  cur = queue;
+  queue = queue->next;
+
+  /* free data structures (memory) */
+  if(cur->thread->id != 0) {
+    free(cur->thread->context.uc_stack.ss_sp);
+    cur->thread->context.uc_stack.ss_sp = NULL;
+  }
+
+  /* put the waiting threads in the runnable queue */
+  cur_waiting = cur->thread->waiting_threads;
+  if(cur_waiting) {
+    tail->next = cur_waiting;
+
+    do {
+      tail = cur_waiting;
+      cur_waiting = cur_waiting->next;
+    } while(cur_waiting);
+  }
+
+  /* setting return value */
+  cur->thread->return_value = NULL;
+  cur->thread->alive = 0;
+
+  /* inserting the thread in the dead_queue */
+  cur->next = dead_queue;
+  dead_queue = cur;
+
+  /* enable ALARM signal */
+  set_preempt_timer(interval);
+
+  /* swapcontext */
+  setcontext(&queue->thread->context);
+}
+
 
 /************************** GTthread API *************************************/
 /* initialize data structures */
@@ -136,11 +185,16 @@ void gtthread_init(long period) {
   queue->thread->return_value = NULL;
   queue->thread->waiting_threads = NULL;
   queue->thread->alive = 1;
-  /* not really required but just to initialize with something */
-  assert(getcontext(&(queue->thread->context)) == 0);
+
+  /* creating a dummy context */
+  assert(getcontext(&return_dummy_context) == 0);
+  return_dummy_context.uc_link = NULL;
+  return_dummy_context.uc_stack.ss_sp = malloc(SIGSTKSZ);
+  return_dummy_context.uc_stack.ss_size = SIGSTKSZ;
+  makecontext(&return_dummy_context, &exit_thread, 0);
 
   /* initialize the timer interrupt for preemption */
-  set_preempt_timer();
+  set_preempt_timer(interval);
 }
 
 /* see man pthread_create(3); the attr parameter is omitted, and this should
@@ -184,8 +238,7 @@ int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *),
   }
 
   /* stack allocation */
-  /* TODO: setup a return context */
-  tail->thread->context.uc_link = NULL;
+  tail->thread->context.uc_link = &(return_dummy_context);
   tail->thread->context.uc_stack.ss_sp = malloc(SIGSTKSZ);
   tail->thread->context.uc_stack.ss_size = SIGSTKSZ;
 
@@ -209,11 +262,10 @@ int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *),
 
 /* see man pthread_join(3) */
 int gtthread_join(gtthread_t thread, void **status) {
-  sigset_t mask;
   Node *temp, *join_node;
 
   /* disable ALARM signal */
-  disable_alarm(&mask);
+  set_preempt_timer(0);
 
   /* find thread with id=thread */
   join_node = search_thread(thread);
@@ -238,11 +290,13 @@ int gtthread_join(gtthread_t thread, void **status) {
   temp->next = join_node->thread->waiting_threads;
   join_node->thread->waiting_threads = temp;
 
-  /* enable ALARM signal */
-  enable_alarm(&mask);
+  /* restart the timer */
+  set_preempt_timer(interval);
 
   /* switch context to next thread */
-  swapcontext(&tail->thread->context, &queue->thread->context);
+  if(swapcontext(&tail->thread->context, &queue->thread->context) == -1) {
+    return -1;
+  }
 
   /* set value of status before return */
   *status = join_node->thread->return_value;
@@ -253,10 +307,9 @@ int gtthread_join(gtthread_t thread, void **status) {
 /* see man pthread_exit(3) */
 void gtthread_exit(void *retval) {
   Node *cur;
-  sigset_t mask;
 
   /* disable ALARM signal */
-  disable_alarm(&mask);
+  set_preempt_timer(0);
 
   /* set the return value */
   queue->thread->return_value = retval;
@@ -286,22 +339,20 @@ void gtthread_exit(void *retval) {
   dead_queue = cur;
 
   /* enable ALARM signal */
-  enable_alarm(&mask);
+  set_preempt_timer(interval);
 
-  /* swap context */
-  swapcontext(NULL, &queue->thread->context);
+  /* set a new context */
+  setcontext(&queue->thread->context);
 }
 
 /* see man sched_yield(2) */
 int gtthread_yield(void) {
-  sigset_t mask;
-
   if(!queue->next) {
     return 0;
   }
 
   /* disable ALARM signal */
-  disable_alarm(&mask);
+  set_preempt_timer(0);
 
   /* put the thread at the end of the queue */
   tail->next = queue;
@@ -310,7 +361,7 @@ int gtthread_yield(void) {
   queue = queue->next;
 
   /* enable ALARM signal */
-  enable_alarm(&mask);
+  set_preempt_timer(interval);
 
   /* swap context */
   if(swapcontext(&tail->thread->context, &queue->thread->context) == -1) {
@@ -329,13 +380,16 @@ int gtthread_equal(gtthread_t t1, gtthread_t t2) {
  * implemented; all threads are canceled immediately */
 int gtthread_cancel(gtthread_t thread) {
   Node *cur, *prev, *cur_waiting, *prev_waiting;
-  sigset_t mask;
+
+  if(queue->thread->id == thread || thread == 0) {
+    return -1;
+  }
 
   /* invariant check */
   assert(queue);
 
   /* disable ALARM signal */
-  disable_alarm(&mask);
+  set_preempt_timer(0);
 
   /* search for the thread.
      Possible cases:
@@ -368,6 +422,10 @@ int gtthread_cancel(gtthread_t thread) {
     cur = cur->next;
   }
 
+  /* If came here => the thread id doesn't exist */
+  set_preempt_timer(interval);
+  return -1;
+
   /* delete the data structure */
   DELETEDATA: prev->next = cur->next;
 
@@ -397,7 +455,7 @@ int gtthread_cancel(gtthread_t thread) {
   dead_queue = cur;
 
   /* enable ALARM signal */
-  enable_alarm(&mask);
+  set_preempt_timer(interval);
 
   return 0;
 }

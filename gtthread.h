@@ -20,6 +20,7 @@
     using int identifier
 -> The first node of the linked list (queue) is the thread running currently
 -> No signals in GTthread code
+-> Not too small context switch interval
 ******************************************************************************/
 
 /************************** DATA STRUCTURES **********************************/

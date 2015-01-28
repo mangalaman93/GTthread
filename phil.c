@@ -12,10 +12,11 @@ void *thr1(void *in) {
 }
 
 int main() {
-    gtthread_t t1;
+    gtthread_t t1, t2;
 
     gtthread_init(50000L);
     gtthread_create( &t1, thr1, NULL);
+    gtthread_create( &t2, thr1, NULL);
 
     while(1);
 
