@@ -296,15 +296,16 @@ int gtthread_join(gtthread_t thread, void **status) {
 
   /* if the thread has exit already */
   if(join_node->thread->alive == 0) {
-    *status = join_node->thread->return_value;
+    if(status) {
+      *status = join_node->thread->return_value;
+    }
+
     return 0;
   }
 
   /* invariant check
-   *  -there has to be at least one more thread in the queue
-   *  -status cannot be NULL */
+   *  -there has to be at least one more thread in the queue */
   assert(queue->next);
-  assert(*status);
 
   /* remove current thread from list of runnable threads and
    * put it at the front of the list of waiting threads for
@@ -323,7 +324,10 @@ int gtthread_join(gtthread_t thread, void **status) {
   }
 
   /* set value of status before return */
-  *status = join_node->thread->return_value;
+  if(status) {
+    *status = join_node->thread->return_value;
+  }
+
   assert(join_node->thread->alive == 0);
   return 0;
 }

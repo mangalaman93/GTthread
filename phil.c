@@ -2,22 +2,73 @@
 #include <stdlib.h>
 #include "gtthread.h"
 
-/* Tests creation.
-   Should print "Hello World!" */
+#define NUM_PHIL 5
+#define LOOP_SIZE 2
+#define MAX_SLEEP_TIME 2000000
 
-void *thr1(void *in) {
-    printf("Hello World!\n");
-    fflush(stdout);
-    return NULL;
+gtthread_mutex_t pfork[NUM_PHIL];
+
+void mysleep(long unsigned num) {
+  long unsigned int i=0;
+  while(i<num) {
+    i++;
+  }
+}
+
+void *philosopher(void *in) {
+  int i, index=(int)(in);
+
+  for(i=0; i<LOOP_SIZE; i++) {
+    /* Think */
+    printf("Philosopher #%d is thinking\n", index);
+    mysleep(rand()%MAX_SLEEP_TIME);
+
+    /* acuire chopsticks */
+    if(index%2 == 0) {
+      printf("Philosopher #%d tries to acquire right chopstick\n", index);
+      gtthread_mutex_lock(&pfork[index]);
+
+      printf("Philosopher #%d tries to acquire left chopstick\n", index);
+      gtthread_mutex_lock(&pfork[index+1%NUM_PHIL]);
+    } else {
+      printf("Philosopher #%d tries to acquire left chopstick\n", index);
+      gtthread_mutex_lock(&pfork[index+1%NUM_PHIL]);
+
+      printf("Philosopher #%d tries to acquire right chopstick\n", index);
+      gtthread_mutex_lock(&pfork[index]);
+    }
+
+    /* Eat */
+    printf("philosopher #%d is eating\n", index);
+    mysleep(rand()%MAX_SLEEP_TIME);
+
+    /* release chopsticks */
+    printf("Philosopher #%d releases right chopstick\n", index);
+    gtthread_mutex_unlock(&pfork[index]);
+    gtthread_mutex_unlock(&pfork[index+1%NUM_PHIL]);
+  }
+
+  return 0;
 }
 
 int main() {
-    gtthread_t t1;
+  int i;
+  gtthread_t t[NUM_PHIL];
 
-    gtthread_init(50000L);
-    gtthread_create( &t1, thr1, NULL);
+  gtthread_init(500L);
 
-    while(1);
+  for(i=0; i<NUM_PHIL; i++) {
+    gtthread_mutex_init(&pfork[i]);
+  }
 
-    return EXIT_SUCCESS;
+  for(i=0; i<NUM_PHIL; i++) {
+    gtthread_create(&t[i], philosopher, (void*)i);
+    printf("%d\n", t[i]);
+  }
+
+  for(i=0; i<NUM_PHIL; i++) {
+    gtthread_join(t[i], NULL);
+  }
+
+  return 0;
 }
