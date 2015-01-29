@@ -38,6 +38,8 @@ void *philosopher(void *in) {
       gtthread_mutex_lock(&pfork[index]);
     }
 
+    gtthread_yield();
+
     /* Eat */
     printf("philosopher #%d is eating\n", index);
     mysleep(rand()%MAX_SLEEP_TIME);
