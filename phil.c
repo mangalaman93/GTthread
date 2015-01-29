@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include "gtthread.h"
 
-#define NUM_PHIL 5
+#define NUM_PHIL 1
 #define LOOP_SIZE 2
 #define MAX_SLEEP_TIME 2000000
 
@@ -54,8 +54,7 @@ void *philosopher(void *in) {
 int main() {
   int i;
   gtthread_t t[NUM_PHIL];
-
-  gtthread_init(500L);
+  gtthread_init(5L);
 
   for(i=0; i<NUM_PHIL; i++) {
     gtthread_mutex_init(&pfork[i]);
@@ -63,7 +62,7 @@ int main() {
 
   for(i=0; i<NUM_PHIL; i++) {
     gtthread_create(&t[i], philosopher, (void*)i);
-    printf("%d\n", t[i]);
+    printf("created thread with id %d\n", (int)t[i]);
   }
 
   for(i=0; i<NUM_PHIL; i++) {

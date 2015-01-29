@@ -1,7 +1,7 @@
 #### GTThread Library Makefile
 
 CFLAGS  = -Wall -pedantic
-LFLAGS  =
+LFLAGS  = -DDEBUG -g
 CC      = gcc
 RM      = /bin/rm -rf
 AR      = ar rc
@@ -17,7 +17,7 @@ LIB_OBJ = $(patsubst %.c,%.o,$(LIB_SRC))
 
 # pattern rule for object files
 %.o: %.c
-	$(CC) -c $(CFLAGS) $< -o $@
+	$(CC) -c $(CFLAGS) $(LFLAGS) $< -o $@
 
 all: $(LIBRARY) $(TEST)
 
@@ -26,11 +26,11 @@ $(LIBRARY): $(LIB_OBJ)
 	$(RANLIB) $(LIBRARY)
 
 $(TEST): $(LIBRARY) $(TEST).c
-	$(CC) $(CFLAGS) -o $(TEST) $(TEST).c $(LIBRARY)
+	$(CC) $(CFLAGS) $(LFLAGS) -o $(TEST) $(TEST).c $(LIBRARY)
 
 clean:
 	$(RM) $(LIBRARY) $(LIB_OBJ) $(TEST)
 
 .PHONY: depend
 depend:
-	$(CFLAGS) -- $(LIB_SRC) 2>/dev/null
+	$(CFLAGS) $(LFLAGS) -- $(LIB_SRC) 2>/dev/null

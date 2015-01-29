@@ -10,8 +10,6 @@ Node *dead_queue;
 long last_allocated_thread_id;
 /* min time slice allocated to each thread */
 long interval;
-/* dummy context to return to */
-ucontext_t return_dummy_context;
 /* mutex linked list */
 MutexNode *mutex_queue;
 
@@ -85,17 +83,22 @@ void set_preempt_timer(long tinterval) {
 
   timer.it_interval.tv_usec = 0;
   timer.it_interval.tv_sec = 0;
-  setitimer(ITIMER_VIRTUAL, &timer, NULL);
+
+  #ifndef DEBUG
+    setitimer(ITIMER_VIRTUAL, &timer, NULL);
+  #endif
+
   return;
 }
 
 /* linear search through the queue to find the thread with the given id */
 Node* search_thread(gtthread_t id) {
   MutexNode *mutex_cur;
-  Node* cur_waiting;
-  Node *cur = queue;
+  Node *cur_waiting;
+  Node *cur;
 
   /* search in current runnable threads */
+  cur = queue;
   while(cur) {
     if(cur->thread->id == id) {
       return cur;
@@ -143,53 +146,6 @@ Node* search_thread(gtthread_t id) {
   assert(0);
 }
 
-/* all threads when return, switch to this function call */
-void exit_thread(void) {
-  /* canceling current thread */
-  Node *cur, *cur_waiting;
-
-  /* invariant check */
-  assert(queue);
-
-  /* disable ALARM signal */
-  set_preempt_timer(0);
-
-  /* delete the data structure */
-  cur = queue;
-  queue = queue->next;
-
-  /* free data structures (memory) */
-  if(cur->thread->id != 0) {
-    free(cur->thread->context.uc_stack.ss_sp);
-    cur->thread->context.uc_stack.ss_sp = NULL;
-  }
-
-  /* put the waiting threads in the runnable queue */
-  cur_waiting = cur->thread->waiting_threads;
-  if(cur_waiting) {
-    tail->next = cur_waiting;
-
-    do {
-      tail = cur_waiting;
-      cur_waiting = cur_waiting->next;
-    } while(cur_waiting);
-  }
-
-  /* setting return value */
-  cur->thread->return_value = NULL;
-  cur->thread->alive = 0;
-
-  /* inserting the thread in the dead_queue */
-  cur->next = dead_queue;
-  dead_queue = cur;
-
-  /* enable ALARM signal */
-  set_preempt_timer(interval);
-
-  /* swapcontext */
-  setcontext(&queue->thread->context);
-}
-
 /* wrapper around the original thread routine so that
    -return value can be captured
    -argument type can be along the lines of the specification
@@ -205,7 +161,9 @@ void start_routine_wrapper(int arg) {
   /* call original function */
   return_value = (*r->routine)(r->args);
 
-  /* call gtthread_exit explicitly */
+  /* call gtthread_exit explicitly
+     will come here only if gtthread_exit
+     is not already called in the routine */
   gtthread_exit(return_value);
 }
 
@@ -229,12 +187,8 @@ void gtthread_init(long period) {
   queue->thread->waiting_threads = NULL;
   queue->thread->alive = 1;
 
-  /* creating a dummy context */
-  assert(getcontext(&return_dummy_context) == 0);
-  return_dummy_context.uc_link = NULL;
-  return_dummy_context.uc_stack.ss_sp = malloc(SIGSTKSZ);
-  return_dummy_context.uc_stack.ss_size = SIGSTKSZ;
-  makecontext(&return_dummy_context, &exit_thread, 0);
+  /* dead queue init */
+  dead_queue = NULL;
 
   /* initialize the timer interrupt for preemption */
   set_preempt_timer(interval);
@@ -275,21 +229,16 @@ int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *), void *ar
     *thread = -1;
     free(tail->thread);
     free(tail);
+    tail = NULL;
     tail = temp_tail;
     enable_alarm(&mask);
     return -1;
   }
 
   /* stack allocation */
-  tail->thread->context.uc_link = &(return_dummy_context);
+  tail->thread->context.uc_link = NULL;
   tail->thread->context.uc_stack.ss_sp = malloc(SIGSTKSZ);
   tail->thread->context.uc_stack.ss_size = SIGSTKSZ;
-
-  /* As arugment to the function should be only int type if we want to use
-   * makecontext, but we are asked to implement void*. We pass it anyway
-   * in makecontext function but make sure that size of a pointer on this
-   * architecture is no bigger than size of int type */
-  /* TODO: assert(sizeof(int) >= sizeof(void*)); */
 
   /* we have to change following things in the context we obtained using getcontext
    * to create new context for a new thread-
@@ -298,6 +247,14 @@ int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *), void *ar
   r = (routine_t*) malloc(sizeof(routine_t));
   r->routine = start_routine;
   r->args = arg;
+
+  /* As arugment to the function should be only int type if we want to use
+   * makecontext, but we are asked to implement void*. We pass it anyway
+   * in makecontext function but make sure that value of a pointer on this
+   * architecture is no bigger than after cast to int type */
+  assert(r == (int)r);
+
+  /* creating context */
   makecontext(&tail->thread->context, (void (*)(void))start_routine_wrapper, 1, (int)r);
   last_allocated_thread_id = *thread;
 
@@ -329,9 +286,8 @@ int gtthread_join(gtthread_t thread, void **status) {
    *  -there has to be at least one more thread in the queue */
   assert(queue->next);
 
-  /* remove current thread from list of runnable threads and
-   * put it at the front of the list of waiting threads for
-   * the thread */
+  /* remove current thread from list of runnable threads and put
+   * it at the front of the list of waiting threads for the thread */
   temp = queue;
   queue = queue->next;
   temp->next = join_node->thread->waiting_threads;
@@ -358,6 +314,10 @@ int gtthread_join(gtthread_t thread, void **status) {
 void gtthread_exit(void *retval) {
   Node *cur;
 
+  #ifdef DEBUG
+    printf("exiting %d\n", queue->thread->id);
+  #endif
+
   /* disable ALARM signal */
   set_preempt_timer(0);
 
@@ -381,6 +341,7 @@ void gtthread_exit(void *retval) {
       cur = cur->next;
     } while(cur);
   }
+  queue->thread->waiting_threads = NULL;
 
   /* keep it in the list of dead threads */
   cur = queue;
@@ -431,6 +392,7 @@ int gtthread_equal(gtthread_t t1, gtthread_t t2) {
 int gtthread_cancel(gtthread_t thread) {
   Node *cur, *prev, *cur_waiting, *prev_waiting;
   MutexNode *mutex_cur;
+  sigset_t mask;
 
   if(queue->thread->id == thread || thread == 0) {
     return -1;
@@ -440,14 +402,15 @@ int gtthread_cancel(gtthread_t thread) {
   assert(queue);
 
   /* disable ALARM signal */
-  set_preempt_timer(0);
+  disable_alarm(&mask);
 
   /* search for the thread */
-  prev = NULL;
-  cur = queue;
+  prev = queue;
+  cur = queue->next;
   while(cur) {
     if(cur->thread->id == thread) {
-      goto DELETEDATA;
+      prev->next = cur->next;
+      goto SKIPDELETEDATA;
     }
 
     /* search in waiting threads */
@@ -455,9 +418,16 @@ int gtthread_cancel(gtthread_t thread) {
     cur_waiting = cur->thread->waiting_threads;
     while(cur_waiting) {
       if(cur_waiting->thread->id == thread) {
-        prev = prev_waiting;
+
+        /* if prev is NULL */
+        if(!prev) {
+          cur->thread->waiting_threads = cur_waiting->next;
+        } else {
+          prev_waiting->next = cur_waiting->next;
+        }
+
         cur = cur_waiting;
-        goto DELETEDATA;
+        goto SKIPDELETEDATA;
       }
 
       prev_waiting = cur_waiting;
@@ -475,7 +445,13 @@ int gtthread_cancel(gtthread_t thread) {
     cur = mutex_cur->mutex->waiting_threads;
     while(cur) {
       if(cur->thread->id == thread) {
-        goto DELETEDATA;
+        if(!prev) {
+          mutex_cur->mutex->waiting_threads = cur->next;
+        } else {
+          prev->next = cur->next;
+        }
+
+        goto SKIPDELETEDATA;
       }
 
       prev = cur;
@@ -486,12 +462,10 @@ int gtthread_cancel(gtthread_t thread) {
   }
 
   /* If came here => the thread id doesn't exist */
-  set_preempt_timer(interval);
+  enable_alarm(&mask);
   return -1;
 
-  /* delete the data structure */
-  DELETEDATA: prev->next = cur->next;
-
+  SKIPDELETEDATA:
   /* free data structures (memory) */
   if(cur->thread->id != 0) {
     free(cur->thread->context.uc_stack.ss_sp);
@@ -508,6 +482,7 @@ int gtthread_cancel(gtthread_t thread) {
       cur_waiting = cur_waiting->next;
     } while(cur_waiting);
   }
+  cur->thread->waiting_threads = NULL;
 
   /* setting return value */
   cur->thread->return_value = NULL;
@@ -518,7 +493,7 @@ int gtthread_cancel(gtthread_t thread) {
   dead_queue = cur;
 
   /* enable ALARM signal */
-  set_preempt_timer(interval);
+  enable_alarm(&mask);
 
   return 0;
 }
