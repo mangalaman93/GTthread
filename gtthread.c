@@ -190,6 +190,25 @@ void exit_thread(void) {
   setcontext(&queue->thread->context);
 }
 
+/* wrapper around the original thread routine so that
+   -return value can be captured
+   -argument type can be along the lines of the specification
+     in the assignment description
+*/
+void start_routine_wrapper(int arg) {
+  void* return_value;
+  routine_t *r;
+
+  /* casting back to routine_t type */
+  r = (routine_t*)arg;
+
+  /* call original function */
+  return_value = (*r->routine)(r->args);
+
+  /* call gtthread_exit explicitly */
+  gtthread_exit(return_value);
+}
+
 
 /************************** GTthread API *************************************/
 /* initialize data structures */
@@ -223,10 +242,10 @@ void gtthread_init(long period) {
 
 /* see man pthread_create(3); the attr parameter is omitted, and this should
  * behave as if attr was NULL (i.e., default attributes) */
-int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *),
-    void *arg) {
+int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *), void *arg) {
   sigset_t mask;
   Node* temp_tail;
+  routine_t *r;
 
   /* checking inputs */
   assert(thread);
@@ -276,7 +295,10 @@ int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *),
    * to create new context for a new thread-
    *  ->stack pointer (allocation)
    *  ->program counter (initialize with new function) */
-  makecontext(&tail->thread->context, (void (*)(void))start_routine, 1, arg);
+  r = (routine_t*) malloc(sizeof(routine_t));
+  r->routine = start_routine;
+  r->args = arg;
+  makecontext(&tail->thread->context, (void (*)(void))start_routine_wrapper, 1, (int)r);
   last_allocated_thread_id = *thread;
 
   /* restoring the timer signal again */

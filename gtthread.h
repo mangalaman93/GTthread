@@ -51,6 +51,11 @@ typedef struct gtthread_mutex_t {
   struct Node *waiting_threads;
 } gtthread_mutex_t;
 
+typedef struct routine_t {
+  void* (*routine)(void *);
+  void* args;
+} routine_t;
+
 
 /****************************** GTthread Interface ***************************/
 /* Must be called before any of the below functions. Failure to do so may
