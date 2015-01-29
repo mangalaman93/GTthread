@@ -1,7 +1,7 @@
 #### GTThread Library Makefile
 
 CFLAGS  = -Wall -pedantic
-LFLAGS  = -DDEBUG -g
+LFLAGS  = -g
 CC      = gcc
 RM      = /bin/rm -rf
 AR      = ar rc

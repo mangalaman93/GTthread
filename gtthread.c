@@ -83,10 +83,7 @@ void set_preempt_timer(long tinterval) {
 
   timer.it_interval.tv_usec = 0;
   timer.it_interval.tv_sec = 0;
-
-  #ifndef DEBUG
-    setitimer(ITIMER_VIRTUAL, &timer, NULL);
-  #endif
+  setitimer(ITIMER_VIRTUAL, &timer, NULL);
 
   return;
 }
@@ -297,7 +294,7 @@ int gtthread_join(gtthread_t thread, void **status) {
   set_preempt_timer(interval);
 
   /* switch context to next thread */
-  if(swapcontext(&tail->thread->context, &queue->thread->context) == -1) {
+  if(swapcontext(&join_node->thread->waiting_threads->thread->context, &queue->thread->context) == -1) {
     return -1;
   }
 
@@ -313,10 +310,6 @@ int gtthread_join(gtthread_t thread, void **status) {
 /* see man pthread_exit(3) */
 void gtthread_exit(void *retval) {
   Node *cur;
-
-  #ifdef DEBUG
-    printf("exiting %d\n", queue->thread->id);
-  #endif
 
   /* disable ALARM signal */
   set_preempt_timer(0);
@@ -367,9 +360,9 @@ int gtthread_yield(void) {
 
   /* put the thread at the end of the queue */
   tail->next = queue;
-  tail = queue;
-  tail->next = NULL;
   queue = queue->next;
+  tail = tail->next;
+  tail->next = NULL;
 
   /* enable ALARM signal */
   set_preempt_timer(interval);

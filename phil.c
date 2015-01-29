@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include "gtthread.h"
 
-#define NUM_PHIL 1
+#define NUM_PHIL 10
 #define LOOP_SIZE 2
 #define MAX_SLEEP_TIME 2000000
 
@@ -29,10 +29,10 @@ void *philosopher(void *in) {
       gtthread_mutex_lock(&pfork[index]);
 
       printf("Philosopher #%d tries to acquire left chopstick\n", index);
-      gtthread_mutex_lock(&pfork[index+1%NUM_PHIL]);
+      gtthread_mutex_lock(&pfork[(index+1)%NUM_PHIL]);
     } else {
       printf("Philosopher #%d tries to acquire left chopstick\n", index);
-      gtthread_mutex_lock(&pfork[index+1%NUM_PHIL]);
+      gtthread_mutex_lock(&pfork[(index+1)%NUM_PHIL]);
 
       printf("Philosopher #%d tries to acquire right chopstick\n", index);
       gtthread_mutex_lock(&pfork[index]);
@@ -45,7 +45,8 @@ void *philosopher(void *in) {
     /* release chopsticks */
     printf("Philosopher #%d releases right chopstick\n", index);
     gtthread_mutex_unlock(&pfork[index]);
-    gtthread_mutex_unlock(&pfork[index+1%NUM_PHIL]);
+    printf("Philosopher #%d releases left chopstick\n", index);
+    gtthread_mutex_unlock(&pfork[(index+1)%NUM_PHIL]);
   }
 
   return 0;
@@ -54,7 +55,7 @@ void *philosopher(void *in) {
 int main() {
   int i;
   gtthread_t t[NUM_PHIL];
-  gtthread_init(5L);
+  gtthread_init(50000L);
 
   for(i=0; i<NUM_PHIL; i++) {
     gtthread_mutex_init(&pfork[i]);
