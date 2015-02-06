@@ -3,7 +3,7 @@
 #include "gtthread.h"
 
 #define NUM_PHIL 10
-#define LOOP_SIZE 2
+#define LOOP_SIZE 100
 #define MAX_SLEEP_TIME 2000000
 
 gtthread_mutex_t pfork[NUM_PHIL];

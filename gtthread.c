@@ -149,6 +149,8 @@ Node* search_thread(gtthread_t id) {
      in the assignment description
 */
 void start_routine_wrapper(int arg) {
+  enable_alarm();
+
   void* return_value;
   routine_t *r;
 
@@ -208,7 +210,7 @@ int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *), void *ar
 
   /* generating a random thread id */
   srand(time(NULL));
-  *thread = last_allocated_thread_id + (rand()%100);
+  *thread = last_allocated_thread_id + 1 + (rand()%100);
 
   /* adding thread to end of list of runnable threads */
   tail->next = malloc(sizeof(Node));
@@ -264,7 +266,7 @@ int gtthread_join(gtthread_t thread, void **status) {
   Node *temp, *join_node;
 
   /* disable ALARM signal */
-  set_preempt_timer(0);
+  disable_alarm();
 
   /* find thread with id=thread */
   join_node = search_thread(thread);
@@ -275,6 +277,7 @@ int gtthread_join(gtthread_t thread, void **status) {
       *status = join_node->thread->return_value;
     }
 
+    enable_alarm();
     return 0;
   }
 
@@ -291,6 +294,7 @@ int gtthread_join(gtthread_t thread, void **status) {
 
   /* restart the timer */
   set_preempt_timer(interval);
+  enable_alarm();
 
   /* switch context to next thread */
   if(swapcontext(&join_node->thread->waiting_threads->thread->context, &queue->thread->context) == -1) {
@@ -344,8 +348,11 @@ void gtthread_exit(void *retval) {
   /* enable ALARM signal */
   set_preempt_timer(interval);
 
-  /* set a new context */
-  setcontext(&queue->thread->context);
+  /* Check if there are no more threads */
+  if(queue) {
+    /* set a new context */
+    setcontext(&queue->thread->context);
+  }
 }
 
 /* see man sched_yield(2) */
@@ -385,19 +392,20 @@ int gtthread_cancel(gtthread_t thread) {
   Node *cur, *prev, *cur_waiting, *prev_waiting;
   MutexNode *mutex_cur;
 
-  if(queue->thread->id == thread || thread == 0) {
-    return -1;
-  }
-
   /* invariant check */
   assert(queue);
 
   /* disable ALARM signal */
   disable_alarm();
 
+  /* if canceling itself */
+  if(queue->thread->id == thread) {
+    return -1;
+  }
+
   /* search for the thread */
-  prev = queue;
-  cur = queue->next;
+  prev = NULL;
+  cur = queue;
   while(cur) {
     if(cur->thread->id == thread) {
       prev->next = cur->next;
@@ -476,7 +484,7 @@ int gtthread_cancel(gtthread_t thread) {
   cur->thread->waiting_threads = NULL;
 
   /* setting return value */
-  cur->thread->return_value = NULL;
+  cur->thread->return_value = ((void *)(size_t) -1);
   cur->thread->alive = 0;
 
   /* inserting the thread in the dead_queue */
@@ -545,7 +553,10 @@ int gtthread_mutex_lock(gtthread_mutex_t *mutex) {
     /* removing the current thread from the list of
        runnable threads, blocking this thread */
     queue = node;
-    assert(queue);
+    if(!queue) {
+      printf("I don't know what to do!!! exiting!\n");
+      exit(0);
+    }
 
     /* enable ALARM signal */
     set_preempt_timer(interval);
