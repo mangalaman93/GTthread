@@ -10,7 +10,7 @@ gtthread_mutex_t pfork[NUM_PHIL];
 
 void mysleep(long unsigned num) {
   long unsigned int i=0;
-  while(i<num) {
+  while(i<num*10) {
     i++;
   }
 }
@@ -37,8 +37,6 @@ void *philosopher(void *in) {
       printf("Philosopher #%d tries to acquire right chopstick\n", index);
       gtthread_mutex_lock(&pfork[index]);
     }
-
-    gtthread_yield();
 
     /* Eat */
     printf("philosopher #%d is eating\n", index);

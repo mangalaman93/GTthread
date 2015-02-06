@@ -18,20 +18,20 @@ MutexNode *mutex_queue;
 void set_preempt_timer(long);
 
 /* disable SIGVTALRM signal */
-void disable_alarm(sigset_t* orig_mask) {
+void disable_alarm() {
   sigset_t sigset;
-
-  assert(orig_mask);
   assert(!sigemptyset(&sigset));
   assert(!sigaddset(&sigset, SIGVTALRM));
-  assert(!sigprocmask(SIG_BLOCK, &sigset, orig_mask));
+  assert(!sigprocmask(SIG_BLOCK, &sigset, NULL));
   return;
 }
 
 /* enable SIGVTALRM signal */
-void enable_alarm(sigset_t *orig_mask) {
-  assert(orig_mask);
-  assert(!sigprocmask(SIG_SETMASK, orig_mask, NULL));
+void enable_alarm() {
+  sigset_t sigset;
+  assert(!sigemptyset(&sigset));
+  assert(!sigaddset(&sigset, SIGVTALRM));
+  assert(!sigprocmask(SIG_UNBLOCK, &sigset, NULL));
   return;
 }
 
@@ -194,7 +194,6 @@ void gtthread_init(long period) {
 /* see man pthread_create(3); the attr parameter is omitted, and this should
  * behave as if attr was NULL (i.e., default attributes) */
 int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *), void *arg) {
-  sigset_t mask;
   Node* temp_tail;
   routine_t *r;
 
@@ -205,7 +204,7 @@ int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *), void *ar
   assert(tail);
 
   /* disabling preemption interrupt */
-  disable_alarm(&mask);
+  disable_alarm();
 
   /* generating a random thread id */
   srand(time(NULL));
@@ -228,7 +227,7 @@ int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *), void *ar
     free(tail);
     tail = NULL;
     tail = temp_tail;
-    enable_alarm(&mask);
+    enable_alarm();
     return -1;
   }
 
@@ -256,7 +255,7 @@ int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *), void *ar
   last_allocated_thread_id = *thread;
 
   /* restoring the timer signal again */
-  enable_alarm(&mask);
+  enable_alarm();
   return 0;
 }
 
@@ -385,7 +384,6 @@ int gtthread_equal(gtthread_t t1, gtthread_t t2) {
 int gtthread_cancel(gtthread_t thread) {
   Node *cur, *prev, *cur_waiting, *prev_waiting;
   MutexNode *mutex_cur;
-  sigset_t mask;
 
   if(queue->thread->id == thread || thread == 0) {
     return -1;
@@ -395,7 +393,7 @@ int gtthread_cancel(gtthread_t thread) {
   assert(queue);
 
   /* disable ALARM signal */
-  disable_alarm(&mask);
+  disable_alarm();
 
   /* search for the thread */
   prev = queue;
@@ -455,7 +453,7 @@ int gtthread_cancel(gtthread_t thread) {
   }
 
   /* If came here => the thread id doesn't exist */
-  enable_alarm(&mask);
+  enable_alarm();
   return -1;
 
   SKIPDELETEDATA:
@@ -486,7 +484,7 @@ int gtthread_cancel(gtthread_t thread) {
   dead_queue = cur;
 
   /* enable ALARM signal */
-  enable_alarm(&mask);
+  enable_alarm();
 
   return 0;
 }
@@ -499,11 +497,10 @@ gtthread_t gtthread_self(void) {
 
 /************************ GTthread MUTEX API *********************************/
 int gtthread_mutex_init(gtthread_mutex_t *mutex) {
-  sigset_t mask;
   MutexNode *mn = malloc(sizeof(MutexNode));
 
   /* disable ALARM signal */
-  disable_alarm(&mask);
+  disable_alarm();
 
   /* putting the mutex in mutex queue */
   mn->next = mutex_queue;
@@ -511,7 +508,7 @@ int gtthread_mutex_init(gtthread_mutex_t *mutex) {
   mutex_queue = mn;
 
   /* enable ALARM signal */
-  enable_alarm(&mask);
+  enable_alarm();
 
   /* init mutex */
   mn->mutex->cur_thread = NULL;
@@ -521,21 +518,20 @@ int gtthread_mutex_init(gtthread_mutex_t *mutex) {
 }
 
 int gtthread_mutex_lock(gtthread_mutex_t *mutex) {
-  sigset_t mask;
   Node *node;
 
   /* disable ALARM signal */
-  disable_alarm(&mask);
+  disable_alarm();
 
   if(mutex->cur_thread == NULL) {
     mutex->cur_thread = queue;
 
     /* enable ALARM signal */
-    enable_alarm(&mask);
+    enable_alarm();
     return 0;
   } else {
     /* enable ALARM signal */
-    enable_alarm(&mask);
+    enable_alarm();
 
     /* disable ALARM signal again */
     set_preempt_timer(0);
@@ -562,11 +558,10 @@ int gtthread_mutex_lock(gtthread_mutex_t *mutex) {
 }
 
 int gtthread_mutex_unlock(gtthread_mutex_t *mutex) {
-  sigset_t mask;
   Node *node;
 
   /* disable ALARM signal */
-  disable_alarm(&mask);
+  disable_alarm();
 
   /* Invariant check */
   assert(queue->thread->id == mutex->cur_thread->thread->id);
@@ -587,7 +582,7 @@ int gtthread_mutex_unlock(gtthread_mutex_t *mutex) {
   }
 
   /* enable ALARM signal */
-  enable_alarm(&mask);
+  enable_alarm();
 
   return 0;
 }
