@@ -265,6 +265,11 @@ int gtthread_create(gtthread_t *thread, void *(*start_routine)(void *), void *ar
 int gtthread_join(gtthread_t thread, void **status) {
   Node *temp, *join_node;
 
+  /* if trying to join to itself */
+  if(queue->thread->id == thread) {
+    return -1;
+  }
+
   /* disable ALARM signal */
   disable_alarm();
 
@@ -283,7 +288,10 @@ int gtthread_join(gtthread_t thread, void **status) {
 
   /* invariant check
    *  -there has to be at least one more thread in the queue */
-  assert(queue->next);
+  if(!queue->next){
+    printf("Something is wrong! exiting!\n");
+    exit(0);
+  }
 
   /* remove current thread from list of runnable threads and put
    * it at the front of the list of waiting threads for the thread */
@@ -352,6 +360,8 @@ void gtthread_exit(void *retval) {
   if(queue) {
     /* set a new context */
     setcontext(&queue->thread->context);
+  } else {
+    exit(0);
   }
 }
 
@@ -395,13 +405,13 @@ int gtthread_cancel(gtthread_t thread) {
   /* invariant check */
   assert(queue);
 
-  /* disable ALARM signal */
-  disable_alarm();
-
   /* if canceling itself */
   if(queue->thread->id == thread) {
-    return -1;
+    gtthread_exit(((void *)(size_t) -1));
   }
+
+  /* disable ALARM signal */
+  disable_alarm();
 
   /* search for the thread */
   prev = NULL;
