@@ -6,6 +6,7 @@
 #define LOOP_SIZE 100
 #define MAX_SLEEP_TIME 2000000
 
+void lower() {}
 gtthread_mutex_t pfork[NUM_PHIL];
 
 void mysleep(long unsigned num) {

@@ -31,3 +31,6 @@
 # Test Files
 phil_test
 rand_test
+
+# NetBeans Project
+nbproject/*

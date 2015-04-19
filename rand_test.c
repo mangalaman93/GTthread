@@ -5,6 +5,8 @@
 #define SIZE 2
 #define MAX_LOOP 10000000
 
+void lower() {}
+
 void *worker(void *in) {
   int j, i=0;
   for(i=0; i<MAX_LOOP; i++) {

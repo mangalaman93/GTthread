@@ -1,5 +1,8 @@
 #include "gtthread.h"
 
+extern void lower();
+void higherLocal();
+
 /************************** GLOBAL DATA **************************************/
 /* maintains a list of runnable threads */
 Node *queue;
@@ -36,18 +39,18 @@ void enable_alarm() {
 }
 
 /* preemptions of currently running thread */
-void timer_handler(int signum) {
+void timer_handler(int signum, siginfo_t *info, void *context) {
   /* check whether context switch is inside the user code */
   #if __x86_64__ || __ppc64__
-    printf("IP: %lx\n", queue->thread->context.uc_mcontext.gregs[REG_RIP]);
+    unsigned long cur_break = ((const ucontext_t*)context)->uc_mcontext.gregs[REG_RIP];
   #else
-    printf("IP: %lx\n", queue->thread->context.uc_mcontext.gregs[REG_EIP]);
+    unsigned long cur_break = ((const ucontext_t*)context)->uc_mcontext.gregs[REG_EIP];
   #endif
 
- /* if() {
+  if(cur_break > (unsigned long)(&higherLocal) || cur_break < (unsigned long)(&lower)) {
     set_preempt_timer(interval);
     return;
-  } */
+  }
 
   /* if there is only one thread */
   if(!queue->next) {
@@ -620,3 +623,5 @@ int gtthread_mutex_unlock(gtthread_mutex_t *mutex) {
 
   return 0;
 }
+
+void higherLocal() {}
