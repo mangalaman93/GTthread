@@ -1,13 +1,13 @@
 #### GTThread Library Makefile
 
-CFLAGS  = -Wall -pedantic
+CFLAGS  = -Wall -pedantic -g
 LFLAGS  =
 CC      = gcc
 RM      = /bin/rm -rf
 AR      = ar rc
 RANLIB  = ranlib
 
-TEST = phil
+TEST = phil_test rand_test
 
 LIBRARY = gtthread.a
 
@@ -25,8 +25,8 @@ $(LIBRARY): $(LIB_OBJ)
 	$(AR) $(LIBRARY) $(LIB_OBJ)
 	$(RANLIB) $(LIBRARY)
 
-$(TEST): $(LIBRARY) $(TEST).c
-	$(CC) $(CFLAGS) $(LFLAGS) -o $(TEST) $(TEST).c $(LIBRARY)
+%_test: $(LIBRARY) %_test.c
+	$(CC) $(CFLAGS) $(LFLAGS) -o $@ $@.c $(LIBRARY)
 
 clean:
 	$(RM) $(LIBRARY) $(LIB_OBJ) $(TEST)

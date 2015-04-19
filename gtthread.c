@@ -37,6 +37,18 @@ void enable_alarm() {
 
 /* preemptions of currently running thread */
 void timer_handler(int signum) {
+  /* check whether context switch is inside the user code */
+  #if __x86_64__ || __ppc64__
+    printf("IP: %lx\n", queue->thread->context.uc_mcontext.gregs[REG_RIP]);
+  #else
+    printf("IP: %lx\n", queue->thread->context.uc_mcontext.gregs[REG_EIP]);
+  #endif
+
+ /* if() {
+    set_preempt_timer(interval);
+    return;
+  } */
+
   /* if there is only one thread */
   if(!queue->next) {
     assert(tail == queue);
@@ -305,7 +317,8 @@ int gtthread_join(gtthread_t thread, void **status) {
   enable_alarm();
 
   /* switch context to next thread */
-  if(swapcontext(&join_node->thread->waiting_threads->thread->context, &queue->thread->context) == -1) {
+  if(swapcontext(&join_node->thread->waiting_threads->thread->context,
+      &queue->thread->context) == -1) {
     return -1;
   }
 

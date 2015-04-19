@@ -29,4 +29,5 @@
 *.hex
 
 # Test Files
-phil
+phil_test
+rand_test

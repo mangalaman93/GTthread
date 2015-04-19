@@ -9,7 +9,7 @@ I keep a linked list of all the runnable threads with the invariant that head of
 
 # How to Run
 * To compile the code, simply run `make`
-* It will create executable `phil` for philosopher example and `gtthread.a` library
+* It will create executable `phil_test` for philosopher example and `gtthread.a` library
 * Ignore the warnings
 * Link your own program with `gtthread.a` and include `gtthread.h`
 

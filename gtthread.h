@@ -1,6 +1,9 @@
 #ifndef __GTTHREAD_H
 #define __GTTHREAD_H
 
+/* To pick up REG_RIP/REG_EIP */
+#define _GNU_SOURCE
+
 #include <assert.h>
 #include <signal.h>
 #include <stdio.h>
